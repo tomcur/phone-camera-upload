@@ -1,0 +1,118 @@
+#!/usr/bin/env python
+
+import os
+from pathlib import Path
+import tempfile
+import glob
+import subprocess
+import mimetypes
+import json
+import re
+import boto3
+from botocore.client import Config
+
+
+CONFIG_DIR = Path.home() / ".config" / "phone-camera-upload"
+CONFIG_BUCKET_FILE = CONFIG_DIR / "config.json"
+
+DATA_DIR = Path.home() / ".local" / "share" / "phone-camera-upload"
+DATA_UPLOADED_FILE = DATA_DIR / "uploaded"
+
+PHOTO_DIR = Path.home() / "syncthing" / "oneplus-a3003-camera" / "Camera"
+
+REGEX = re.compile(r"^(IMG|VID)_\d{8}_\d{6}(_+\d+)*\.\w+$")
+
+bucket = None
+temp_dir = None
+
+
+def handle(file_path, base_name):
+    print(f"handling {base_name}")
+    if not REGEX.match(base_name):
+        print("file name invalid")
+        raise Exception
+
+    parts = base_name.split("_")
+    date = parts[1]
+    year = date[:4]
+    month = date[4:6]
+
+    (mime, _) = mimetypes.guess_type(base_name)
+    mime = mime.split('/')[0]
+    if mime == "image":
+        without_ext = os.path.splitext(base_name)[0]
+        output_file = f"{without_ext}.jpg"
+        output_path = temp_dir / output_file
+        recompress_result = subprocess.run(
+            [
+                "jpeg-recompress",
+                "--method",
+                "smallfry",
+                "--quality",
+                "medium",
+                str(file_path),
+                str(output_path)
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        recompress_result.check_returncode()
+        bucket.upload_file(str(output_path), f"{year}/{month}/{output_file}")
+        os.remove(str(output_path))
+        return True
+    elif mime == "video":
+        without_ext = os.path.splitext(base_name)[0]
+        output_file = f"{without_ext}.mp4"
+        output_path = temp_dir / output_file
+        transcode_result = subprocess.run(
+            [
+                "ffmpeg",
+                "-i",
+                str(file_path),
+                "-vcodec",
+                "libx265",
+                "-crf",
+                "25",
+                str(output_path)
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        transcode_result.check_returncode()
+        bucket.upload_file(str(output_path), f"{year}/{month}/{output_file}")
+        os.remove(str(output_path))
+        return True
+    else:
+        print("unknown filetype")
+        return False
+
+
+if __name__ == "__main__":
+    with open(CONFIG_BUCKET_FILE) as f:
+        bucket_config = json.load(f)
+
+    s3 = boto3.resource(
+        's3',
+        endpoint_url=bucket_config["url"],
+        aws_access_key_id=bucket_config["key"],
+        aws_secret_access_key=bucket_config["secret"],
+        config=Config(signature_version='s3v4'),
+        region_name=bucket_config["region"],
+    )
+    bucket = s3.Bucket(bucket_config["bucket"])
+
+    dir = tempfile.TemporaryDirectory()
+    temp_dir = Path(dir.name)
+
+    try:
+        with open(DATA_UPLOADED_FILE, 'r') as f:
+            uploaded = set(line.strip() for line in f)
+        with open(DATA_UPLOADED_FILE, 'a') as f:
+            for file_path in glob.glob(str(PHOTO_DIR / "*")):
+                base_name = os.path.basename(file_path)
+                if base_name not in uploaded:
+                    if handle(file_path, base_name):
+                        f.write(f"{base_name}\n")
+    finally:
+        dir.cleanup()
+

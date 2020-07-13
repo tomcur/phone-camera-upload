@@ -1,0 +1,7 @@
+{
+    "url": "https://s3.example.org",
+    "bucket": "media",
+    "key": "key-example",
+    "secret": "secret-example",
+    "region": "eu-west-1"
+}
