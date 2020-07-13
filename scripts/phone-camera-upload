@@ -8,12 +8,10 @@ import subprocess
 import mimetypes
 import json
 import re
-import boto3
-from botocore.client import Config
-
+import requests
 
 CONFIG_DIR = Path.home() / ".config" / "phone-camera-upload"
-CONFIG_BUCKET_FILE = CONFIG_DIR / "config.json"
+CONFIG_WEBDAV_FILE = CONFIG_DIR / "config.json"
 
 DATA_DIR = Path.home() / ".local" / "share" / "phone-camera-upload"
 DATA_UPLOADED_FILE = DATA_DIR / "uploaded"
@@ -22,15 +20,70 @@ PHOTO_DIR = Path.home() / "syncthing" / "oneplus-a3003-camera" / "Camera"
 
 REGEX = re.compile(r"^(IMG|VID)_\d{8}_\d{6}(_+\d+)*\.\w+$")
 
-bucket = None
+webdav_client = None
 temp_dir = None
+
+
+class WebdavClient:
+    def __init__(self, url, username, password):
+        self.url = url
+        self.username = username
+        self.password = password
+        self._known_existing_dirs = set()
+        self._session = requests.Session()
+        self._session.auth = (self.username, self.password)
+
+    def _mkdir(self, path):
+        return self._session.request(
+            "MKCOL", f"{self.url}/{path}", auth=(self.username, self.password)
+        )
+
+    def _exists(self, path):
+        r = self._session.head(
+            f"{self.url}/{path}", auth=(self.username, self.password)
+        )
+        return r.status_code in (200,)
+
+    def _mkdirs(self, path):
+        path_accum = Path()
+        for path_part in path.parts:
+            path_accum /= path_part
+            if path_accum in self._known_existing_dirs:
+                continue
+
+            if self._exists(path_accum):
+                self._known_existing_dirs.add(path_accum)
+                continue
+
+            r = self._mkdir(path_accum)
+            if r.status_code in (201,):
+                self._known_existing_dirs.add(path_accum)
+            else:
+                raise Exception(
+                    f"Invalid mkdir response status code: {r.status_code}. Response: {r.text}"
+                )
+
+    def upload(self, local_filename, remote_filename):
+        self._mkdirs(remote_filename.parent)
+        with open(local_filename, "rb") as f:
+            r = self._session.put(
+                f"{self.url}/{remote_filename}",
+                auth=(self.username, self.password),
+                data=f,
+            )
+
+            if r.status_code not in (201,):
+                raise Exception(
+                    f"Invalid upload response status code: {r.status_code}. Response: {r.text}"
+                )
 
 
 def handle(file_path, base_name):
     print(f"handling {base_name}")
     if not REGEX.match(base_name):
-        print("file name invalid")
-        raise Exception
+        raise Exception(
+            f"file name invalid: base_name: {base_name}. file_path: {file_path}"
+        )
 
     parts = base_name.split("_")
     date = parts[1]
@@ -38,7 +91,7 @@ def handle(file_path, base_name):
     month = date[4:6]
 
     (mime, _) = mimetypes.guess_type(base_name)
-    mime = mime.split('/')[0]
+    mime = mime.split("/")[0]
     if mime == "image":
         without_ext = os.path.splitext(base_name)[0]
         output_file = f"{without_ext}.jpg"
@@ -51,13 +104,15 @@ def handle(file_path, base_name):
                 "--quality",
                 "medium",
                 str(file_path),
-                str(output_path)
+                str(output_path),
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         recompress_result.check_returncode()
-        bucket.upload_file(str(output_path), f"{year}/{month}/{output_file}")
+        webdav_client.upload(
+            output_path, Path(year) / month / output_file,
+        )
         os.remove(str(output_path))
         return True
     elif mime == "video":
@@ -73,13 +128,15 @@ def handle(file_path, base_name):
                 "libx265",
                 "-crf",
                 "25",
-                str(output_path)
+                str(output_path),
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         transcode_result.check_returncode()
-        bucket.upload_file(str(output_path), f"{year}/{month}/{output_file}")
+        webdav_client.upload(
+            output_path, Path(year) / month / output_file,
+        )
         os.remove(str(output_path))
         return True
     else:
@@ -88,26 +145,22 @@ def handle(file_path, base_name):
 
 
 if __name__ == "__main__":
-    with open(CONFIG_BUCKET_FILE) as f:
-        bucket_config = json.load(f)
+    with open(CONFIG_WEBDAV_FILE) as f:
+        webdav_config = json.load(f)
 
-    s3 = boto3.resource(
-        's3',
-        endpoint_url=bucket_config["url"],
-        aws_access_key_id=bucket_config["key"],
-        aws_secret_access_key=bucket_config["secret"],
-        config=Config(signature_version='s3v4'),
-        region_name=bucket_config["region"],
+    webdav_client = WebdavClient(
+        webdav_config["webdav_url"],
+        webdav_config["webdav_username"],
+        webdav_config["webdav_password"],
     )
-    bucket = s3.Bucket(bucket_config["bucket"])
 
     dir = tempfile.TemporaryDirectory()
     temp_dir = Path(dir.name)
 
     try:
-        with open(DATA_UPLOADED_FILE, 'r') as f:
+        with open(DATA_UPLOADED_FILE, "r") as f:
             uploaded = set(line.strip() for line in f)
-        with open(DATA_UPLOADED_FILE, 'a') as f:
+        with open(DATA_UPLOADED_FILE, "a") as f:
             for file_path in glob.glob(str(PHOTO_DIR / "*")):
                 base_name = os.path.basename(file_path)
                 if base_name not in uploaded:
@@ -115,4 +168,3 @@ if __name__ == "__main__":
                         f.write(f"{base_name}\n")
     finally:
         dir.cleanup()
-

@@ -1,8 +1,7 @@
 with import <nixpkgs> { };
 let
   python-packages = python-packages: [
-    python-packages.boto3
-    python-packages.botocore
+    python-packages.requests
     python-packages.imageio
     python-packages.imageio-ffmpeg
   ];
