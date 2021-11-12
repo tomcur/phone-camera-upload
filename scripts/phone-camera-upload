@@ -112,7 +112,8 @@ def handle(file_path, base_name):
             stderr=subprocess.DEVNULL,
         )
         webdav_client.upload(
-            output_path, Path(year) / month / output_file,
+            output_path,
+            Path(year) / month / output_file,
         )
         os.remove(str(output_path))
         return True
@@ -136,7 +137,8 @@ def handle(file_path, base_name):
             stderr=subprocess.DEVNULL,
         )
         webdav_client.upload(
-            output_path, Path(year) / month / output_file,
+            output_path,
+            Path(year) / month / output_file,
         )
         os.remove(str(output_path))
         return True
