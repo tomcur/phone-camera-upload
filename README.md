@@ -1,5 +1,10 @@
 # phone-camera-upload
-This script recompresses and uploads synced pictures and videos from my Phone to a WebDAV server.
+This script recompresses and uploads synced pictures and videos from my phone
+to a remote.
+
+Currently supported remotes:
+- WebDAV servers;
+- local directories.
 
 Pictures are recompressed to medium quality using the SmallFry JPEG optimizer from [jpeg-archive](https://github.com/danielgtaylor/jpeg-archive).
 
@@ -29,10 +34,13 @@ $ nix build .#
 This places phone-camera-upload's executables in `./result/bin`.
 
 # Usage
-Copy `./config/phone-camera-upload.json.example` to `$HOME/.config/phone-camera-upload/config.json` and edit it with your WebDAV details.
+Copy `./config/phone-camera-upload.json.example` to
+`$HOME/.config/phone-camera-upload/config.json` and edit it with your remote
+details.
 
-The script is hardcoded to upload media in `~/syncthing/oneplus-a3003-camera/Camera` to the WebDAV server.
-It stores file names of successful uploads in `~/.local/share/phone-camera-upload`.
+The script is hardcoded to upload media in
+`~/syncthing/oneplus-a3003-camera/Camera` to the configured remote. It stores
+file names of successful uploads in `~/.local/share/phone-camera-upload`.
 
 To start the script, run:
 

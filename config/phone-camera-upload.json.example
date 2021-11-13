@@ -1,5 +1,7 @@
 {
+    "remote": "webdav",
     "webdav_url": "https://webdav.example.com/some/folder/prefix",
     "webdav_username": "username",
-    "webdav_password": "password"
+    "webdav_password": "password",
+    "local_path": "/some/local/path"
 }
