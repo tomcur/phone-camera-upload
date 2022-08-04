@@ -13,8 +13,6 @@
           with pkgs; let
             python-packages = python-packages: [
               python-packages.requests
-              python-packages.imageio
-              python-packages.imageio-ffmpeg
             ];
             python-with-packages = python3.withPackages python-packages;
           in
