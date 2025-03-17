@@ -17,9 +17,9 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 DATA_DIR = Path.home() / ".local" / "share" / "phone-camera-upload"
 DATA_UPLOADED_FILE = DATA_DIR / "uploaded"
 
-PHOTO_DIR = Path.home() / "syncthing" / "oneplus-a3003-camera" / "Camera"
+PHOTO_DIR = Path.home() / "syncthing" / "p7-camera" / "Camera"
 
-REGEX = re.compile(r"^(IMG|VID)_\d{8}_\d{6}(_+\d+)*\.\w+$")
+REGEX = re.compile(r"^(PXL|IMG|VID)_\d{8}_\d{9}.*\.\w+$")
 
 client = None
 temp_dir = None
